@@ -6,6 +6,8 @@ const proxy = httpProxy.createProxyServer({});
 const FIXTURES_PATH = 'fixtures.json';
 
 const fixtures = {};
+// { [srcIp: string]: { [srcPort: string]: { [url: string]: { body: string }}}}
+const reqCache = {};
 
 const exit = (code) => {
   fs.writeFileSync(FIXTURES_PATH, JSON.stringify(fixtures));
@@ -13,22 +15,21 @@ const exit = (code) => {
 }
 
 process.on('SIGINT', () => {
-  onExit();
+  exit();
 });
 
 process.on('SIGHUP', () => {
-  onExit();
+  exit();
 });
 
 const saveFixture = (req, { body, statusCode, headers }) => {
-  fixtures[req.url] = { body, statusCode, headers };
+  const reqBody = reqCache[req.socket.remoteAddress][req.socket.remotePort][req.url].body;
+  if (!fixtures[req.url]) { fixtures[req.url] = {}; }
+  fixtures[req.url][reqBody] = { body, statusCode, headers };
+  delete reqCache[req.socket.remoteAddress][req.socket.remotePort][req.url];
   console.log('save fixture:');
   console.log(fixtures[req.url]);
 };
-
-proxy.on('proxyReq', (proxyReq) => {
-  proxyReq.setHeader('host', 'httpbin.org');
-});
 
 proxy.on('proxyRes', (proxyRes, req) => {
   let rawBody = Buffer.from('');
@@ -46,6 +47,19 @@ proxy.on('proxyRes', (proxyRes, req) => {
 });
 
 const server = http.createServer((req, res) => {
+  let rawBody = Buffer.from('');
+  req.headers.host = 'httpbin.org';
+  req.on('data', (data) => {
+    rawBody = Buffer.concat([rawBody, data]);
+  });
+  req.on('end', () => {
+    const body = rawBody.toString();
+    reqCache[req.socket.remoteAddress] = {
+      [req.socket.remotePort]: {
+        [req.url]: { body },
+      } 
+    };
+  });
   proxy.web(req, res, { target: 'http://httpbin.org' });
 });
 server.listen(8888);

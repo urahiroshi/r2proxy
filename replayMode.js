@@ -7,8 +7,8 @@ const FIXTURES_PATH = 'fixtures.json';
 
 const fixtures = JSON.parse(fs.readFileSync(FIXTURES_PATH));
 
-const loadFixture = (req) => {
-  return fixtures[req.url];
+const loadFixture = ({ req, body }) => {
+  return fixtures[req.url][body];
 };
 
 proxy.on('proxyReq', (proxyReq) => {
@@ -16,15 +16,23 @@ proxy.on('proxyReq', (proxyReq) => {
 });
 
 const server = http.createServer((req, res) => {
-  const fixture = loadFixture(req);
-  if (fixture) {
-    console.log('load fixture:');
-    console.log(fixtures[req.url]);
-    res.writeHead(fixture.statusCode, fixture.headers);
-    res.write(fixture.body);
-    res.end();
-  } else {
-    proxy.web(req, res, { target: 'http://httpbin.org' });
-  }
+  let rawBody = Buffer.from('');
+  req.headers.host = 'httpbin.org';
+  req.on('data', (data) => {
+    rawBody = Buffer.concat([rawBody, data]);
+  });
+  req.on('end', () => {
+    const body = rawBody.toString();
+    const fixture = loadFixture({ req, body });
+    if (fixture) {
+      console.log('load fixture:');
+      console.log(fixture);
+      res.writeHead(fixture.statusCode, fixture.headers);
+      res.write(fixture.body);
+      res.end();
+    } else {
+      proxy.web(req, res, { target: 'http://httpbin.org' });
+    }
+  });
 });
 server.listen(8888);
