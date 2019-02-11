@@ -1,7 +1,9 @@
 const MODE = process.env.MODE || 'record';
 
+let run;
 if (MODE === 'record') {
-  require('./recordMode');
+  run = require('./lib/record');
 } else if (MODE === 'replay') {
-  require('./replayMode');
+  run = require('./lib/replay');
 }
+module.exports = { run };
